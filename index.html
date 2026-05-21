@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team Calendar</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@700&display=swap');
+  :root {
+    --bg:#f5f2ee;--surface:#fff;--border:#e2ddd8;--text:#1a1714;--muted:#8a8480;
+    --danger:#c0392b;--danger-bg:#fff0ef;--danger-border:#f5b7b1;
+    --holiday:#8e44ad;--dayoff:#2980b9;--pending:#e67e22;--pending-bg:#fef9f0;
+    --approved:#27ae60;--rejected:#e74c3c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:24px 16px 48px;}
+
+  .save-bar{position:fixed;top:12px;right:16px;z-index:300;font-size:.75rem;font-weight:600;padding:4px 12px;border-radius:20px;transition:opacity .4s;}
+  .save-bar.saving{background:#fff3cd;color:#856404;opacity:1;}
+  .save-bar.saved{background:#d5f5e3;color:#1e8449;opacity:1;}
+  .save-bar.error{background:#fde8e6;color:var(--danger);opacity:1;}
+  .save-bar.hidden{opacity:0;pointer-events:none;}
+
+  /* Manager bar */
+  .manager-bar{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+  .manager-badge{display:flex;align-items:center;gap:6px;background:#1a1714;color:#fff;padding:6px 14px;border-radius:20px;font-size:.8rem;font-weight:600;}
+  .manager-btn{padding:6px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:inherit;font-size:.8rem;font-weight:600;cursor:pointer;transition:all .15s;}
+  .manager-btn:hover{border-color:#aaa;}
+  .pending-count{background:var(--pending);color:#fff;border-radius:10px;padding:1px 7px;font-size:.72rem;margin-left:4px;}
+
+  header{text-align:center;margin-bottom:18px;}
+  header h1{font-family:'Playfair Display',serif;font-size:2rem;letter-spacing:-.5px;}
+  header p{color:var(--muted);font-size:.86rem;margin-top:4px;}
+
+  .top-bar{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;margin-bottom:14px;}
+  .export-btn{display:flex;align-items:center;gap:6px;padding:8px 16px;background:#27ae60;color:#fff;border:none;border-radius:8px;font-family:inherit;font-size:.86rem;font-weight:600;cursor:pointer;}
+  .export-btn:hover{opacity:.85;}
+
+  .type-legend{display:flex;gap:8px;align-items:center;font-size:.78rem;flex-wrap:wrap;justify-content:center;}
+  .type-pill{display:flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;color:#fff;font-size:.74rem;font-weight:600;}
+  .pill-holiday{background:var(--holiday);}
+  .pill-dayoff{background:var(--dayoff);}
+  .pill-pending{background:var(--pending);}
+
+  .legend{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:12px;}
+  .legend-item{display:flex;align-items:center;gap:6px;background:var(--surface);border:1.5px solid var(--border);border-radius:20px;padding:5px 12px;font-size:.82rem;font-weight:500;cursor:pointer;transition:all .15s;user-select:none;}
+  .legend-item:hover{border-color:#aaa;}
+  .legend-item.inactive{opacity:.35;}
+  .legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+
+  .controls{display:flex;align-items:center;justify-content:center;margin-bottom:12px;}
+  .month-nav{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 16px;}
+  .month-nav button{background:none;border:none;cursor:pointer;font-size:1.1rem;color:var(--text);padding:2px 6px;border-radius:6px;}
+  .month-nav button:hover{background:var(--bg);}
+  .month-nav span{font-size:1rem;font-weight:600;min-width:150px;text-align:center;}
+
+  .alert-hint{display:flex;align-items:center;gap:8px;justify-content:center;font-size:.78rem;color:var(--danger);margin-bottom:14px;font-weight:500;}
+  .alert-hint-dot{width:12px;height:12px;background:var(--danger-bg);border:2px solid var(--danger);border-radius:3px;flex-shrink:0;}
+
+  .calendar-wrap{max-width:960px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;}
+  .cal-header{display:grid;grid-template-columns:repeat(7,1fr);background:var(--text);color:#fff;}
+  .cal-header div{text-align:center;padding:10px 4px;font-size:.75rem;font-weight:600;letter-spacing:.5px;text-transform:uppercase;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid var(--border);}
+
+  .cal-day{border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-height:115px;padding:6px;cursor:pointer;transition:background .1s;display:flex;flex-direction:column;gap:3px;}
+  .cal-day:nth-child(7n){border-right:none;}
+  .cal-day:hover{background:#faf9f7;}
+  .cal-day.other-month{background:#f9f8f6;}
+  .cal-day.other-month .day-num{color:#ccc;}
+  .cal-day.critical{background:var(--danger-bg)!important;border-color:var(--danger-border);}
+  .cal-day.critical:hover{background:#fde8e6!important;}
+  .cal-day.critical .day-num{color:var(--danger);}
+  .cal-day.today .day-num{background:var(--text);color:#fff!important;border-radius:50%;}
+  .cal-day.today.critical .day-num{background:var(--danger);}
+  .cal-day.has-pending{border-left:3px solid var(--pending);}
+
+  .day-top{display:flex;align-items:center;justify-content:space-between;}
+  .day-num{font-size:.82rem;font-weight:600;width:24px;height:24px;display:flex;align-items:center;justify-content:center;}
+  .critical-badge{font-size:.58rem;font-weight:700;color:var(--danger);background:#fad5d3;border-radius:4px;padding:1px 5px;text-transform:uppercase;display:none;}
+  .cal-day.critical .critical-badge{display:block;}
+
+  .available-row{display:flex;gap:3px;flex-wrap:wrap;}
+  .avail-dot{width:8px;height:8px;border-radius:50%;opacity:.2;flex-shrink:0;}
+  .avail-dot.present{opacity:1;}
+  .avail-dot.pending{opacity:1;border:2px solid var(--pending);background:#fff!important;}
+
+  .day-entries{display:flex;flex-direction:column;gap:2px;flex:1;}
+  .entry-chip{font-size:.66rem;font-weight:600;padding:2px 5px;border-radius:4px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;justify-content:space-between;gap:2px;}
+  .entry-chip .chip-label{display:flex;align-items:center;gap:3px;overflow:hidden;}
+  .entry-chip .chip-name{overflow:hidden;text-overflow:ellipsis;}
+  .entry-chip .remove-x{cursor:pointer;opacity:.75;font-size:.8rem;flex-shrink:0;}
+  .entry-chip .remove-x:hover{opacity:1;}
+  .chip-holiday{background:var(--holiday)!important;}
+  .chip-dayoff{background:var(--dayoff)!important;}
+  .chip-pending{background:var(--pending)!important;}
+
+  /* Modals */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:100;align-items:center;justify-content:center;padding:16px;}
+  .modal-overlay.open{display:flex;}
+  .modal{background:var(--surface);border-radius:16px;padding:24px;width:380px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,.14);animation:pop .18s ease;max-height:90vh;overflow-y:auto;}
+  @keyframes pop{from{transform:scale(.95);opacity:0;}to{transform:scale(1);opacity:1;}}
+
+  .modal h3{font-family:'Playfair Display',serif;font-size:1.1rem;margin-bottom:4px;}
+  .modal-summary{font-size:.8rem;color:var(--muted);margin-bottom:14px;}
+  .modal-summary.danger{color:var(--danger);font-weight:600;}
+  .modal-section-label{font-size:.72rem;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;margin-top:12px;}
+
+  /* Request form */
+  .req-name-select{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;margin-bottom:10px;outline:none;background:var(--surface);}
+  .req-name-select:focus{border-color:#999;}
+  .req-type-btns{display:flex;gap:8px;margin-bottom:10px;}
+  .req-type-btn{flex:1;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.84rem;font-weight:600;cursor:pointer;background:var(--bg);transition:all .12s;text-align:center;}
+  .req-type-btn.active-holiday{background:var(--holiday);color:#fff;border-color:var(--holiday);}
+  .req-type-btn.active-dayoff{background:var(--dayoff);color:#fff;border-color:var(--dayoff);}
+
+  .note-input{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:.84rem;margin-bottom:14px;resize:none;outline:none;}
+  .note-input:focus{border-color:#999;}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;}
+  .modal-actions button{padding:8px 18px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:.85rem;cursor:pointer;transition:all .12s;}
+  .btn-cancel{background:var(--bg);}
+  .btn-cancel:hover{background:#ece9e5;}
+  .btn-save{background:var(--text);color:#fff;border-color:var(--text);}
+  .btn-save:hover{opacity:.82;}
+  .btn-approve{background:var(--approved);color:#fff;border-color:var(--approved);}
+  .btn-reject{background:var(--rejected);color:#fff;border-color:var(--rejected);}
+
+  /* Pending requests list */
+  .pending-list{display:flex;flex-direction:column;gap:8px;max-height:400px;overflow-y:auto;}
+  .pending-item{border:1.5px solid var(--pending);border-radius:10px;padding:10px 12px;background:var(--pending-bg);}
+  .pending-item-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .pending-item-name{font-weight:600;font-size:.88rem;}
+  .pending-item-type{font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:8px;color:#fff;background:var(--pending);}
+  .pending-item-date{font-size:.78rem;color:var(--muted);margin-bottom:6px;}
+  .pending-item-note{font-size:.78rem;color:var(--muted);font-style:italic;margin-bottom:8px;}
+  .pending-actions{display:flex;gap:6px;}
+  .pending-actions button{flex:1;padding:6px;border-radius:8px;border:none;font-family:inherit;font-size:.78rem;font-weight:600;cursor:pointer;}
+  .btn-sm-approve{background:#d5f5e3;color:#1e8449;}
+  .btn-sm-approve:hover{background:var(--approved);color:#fff;}
+  .btn-sm-reject{background:#fde8e6;color:var(--rejected);}
+  .btn-sm-reject:hover{background:var(--rejected);color:#fff;}
+  .no-pending{text-align:center;color:var(--muted);padding:20px;font-size:.88rem;}
+
+  /* Login modal */
+  .login-input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:.95rem;margin-bottom:12px;outline:none;letter-spacing:2px;}
+  .login-input:focus{border-color:#999;}
+  .login-error{color:var(--danger);font-size:.8rem;margin-bottom:10px;display:none;}
+  .login-error.visible{display:block;}
+
+  .loading-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:999;}
+  .loading-screen p{color:var(--muted);font-size:.9rem;}
+  .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--text);border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+
+<div class="loading-screen" id="loadingScreen">
+  <div class="spinner"></div>
+  <p>Loading calendar…</p>
+</div>
+
+<div id="app" style="display:none">
+  <div class="save-bar hidden" id="saveBar"></div>
+
+  <header>
+    <h1>📅 Team Calendar</h1>
+    <p>Click any day to request time off · Managers approve requests</p>
+  </header>
+
+  <!-- Manager bar -->
+  <div class="manager-bar">
+    <div id="managerBadge" style="display:none" class="manager-badge">🔑 Manager mode</div>
+    <button class="manager-btn" id="managerBtn" onclick="openManagerLogin()">Manager login</button>
+    <button class="manager-btn" id="pendingBtn" onclick="openPendingModal()" style="display:none">
+      📋 Pending requests <span class="pending-count" id="pendingCount">0</span>
+    </button>
+    <button class="manager-btn" id="logoutBtn" onclick="logoutManager()" style="display:none">Logout</button>
+  </div>
+
+  <div class="top-bar">
+    <div class="type-legend">
+      <div class="type-pill pill-pending">⏳ Pending</div>
+      <div class="type-pill pill-holiday">🌴 Holiday</div>
+      <div class="type-pill pill-dayoff">☀️ Day off</div>
+    </div>
+    <button class="export-btn" onclick="exportWeek()">⬇ Export this week</button>
+  </div>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="controls">
+    <div class="month-nav">
+      <button onclick="changeMonth(-1)">‹</button>
+      <span id="monthLabel"></span>
+      <button onclick="changeMonth(1)">›</button>
+    </div>
+  </div>
+
+  <div class="alert-hint">
+    <div class="alert-hint-dot"></div>
+    Days highlighted in red = more than half the team is unavailable
+  </div>
+
+  <div class="calendar-wrap">
+    <div class="cal-header">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div>
+      <div style="color:#f9c84a">Sat</div><div style="color:#f9c84a">Sun</div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
+</div>
+
+<!-- Request modal (staff) -->
+<div class="modal-overlay" id="requestModal" onclick="closeModalOutside(event,'requestModal')">
+  <div class="modal">
+    <h3 id="reqModalTitle"></h3>
+    <div class="modal-section-label">Your name</div>
+    <select class="req-name-select" id="reqName">
+      <option value="">— Select your name —</option>
+    </select>
+    <div class="modal-section-label">Type of request</div>
+    <div class="req-type-btns">
+      <button class="req-type-btn" id="btnHoliday" onclick="selectReqType('holiday')">🌴 Holiday<br><small style="font-weight:400">Paid leave</small></button>
+      <button class="req-type-btn" id="btnDayoff" onclick="selectReqType('dayoff')">☀️ Day off<br><small style="font-weight:400">Free day</small></button>
+    </div>
+    <div id="holidayNotice" style="font-size:.75rem;color:#c0392b;background:#fff0ef;border-radius:8px;padding:6px 10px;margin-bottom:8px;display:none;"></div>
+    <div class="modal-section-label">Note (optional)</div>
+    <textarea class="note-input" id="reqNote" rows="2" placeholder="Any additional info…"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('requestModal')">Cancel</button>
+      <button class="btn-save" onclick="submitRequest()">Send request</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manager day modal -->
+<div class="modal-overlay" id="managerDayModal" onclick="closeModalOutside(event,'managerDayModal')">
+  <div class="modal">
+    <h3 id="mgrDayTitle"></h3>
+    <div class="modal-summary" id="mgrDaySummary"></div>
+    <div class="modal-section-label">Requests on this day</div>
+    <div id="mgrDayList"></div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn-cancel" onclick="closeModal('managerDayModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pending requests modal -->
+<div class="modal-overlay" id="pendingModal" onclick="closeModalOutside(event,'pendingModal')">
+  <div class="modal">
+    <h3>📋 Pending Requests</h3>
+    <div style="height:12px"></div>
+    <div class="pending-list" id="pendingList"></div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn-cancel" onclick="closeModal('pendingModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manager login modal -->
+<div class="modal-overlay" id="loginModal" onclick="closeModalOutside(event,'loginModal')">
+  <div class="modal">
+    <h3>🔑 Manager Login</h3>
+    <div style="height:12px"></div>
+    <div class="modal-section-label">Password</div>
+    <input type="password" class="login-input" id="loginInput" placeholder="••••••••"
+      onkeydown="if(event.key==='Enter') doLogin()">
+    <div class="login-error" id="loginError">Incorrect password. Try again.</div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('loginModal')">Cancel</button>
+      <button class="btn-save" onclick="doLogin()">Login</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://rjbjufcaqtkugjqqvswa.supabase.co";
+const SUPABASE_KEY = "sb_publishable_YaDtY1Zn33CT2xvLy_060A_Vsm3l1kO";
+const TABLE = "calendar_data";
+const MANAGER_PASS = "Margo123";
+
+const COLORS = ['#e05252','#2980b9','#27ae60','#e07d35','#8e44ad','#16a085','#d4ac0d','#c0392b','#546e7a','#d35400'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+const DEFAULT_EMPLOYEES = [
+  {id:1,name:'Eddie', color:COLORS[0],visible:true},
+  {id:2,name:'Akos',  color:COLORS[1],visible:true},
+  {id:3,name:'Avenar',color:COLORS[2],visible:true},
+  {id:4,name:'Ana',   color:COLORS[3],visible:true},
+  {id:5,name:'Sam',   color:COLORS[4],visible:true},
+  {id:6,name:'Matt',  color:COLORS[5],visible:true},
+];
+
+// entries[dateKey] = [ {empId, type, status:'pending'|'approved'|'rejected', note, reqId} ]
+let employees=[], entries={}, nextId=7, nextReqId=1;
+let today=new Date(), currentYear=today.getFullYear(), currentMonth=today.getMonth();
+let selectedDateKey=null, selectedReqType=null;
+let isManager=false;
+let saveTimer=null, lastJSON='';
+
+// ── Supabase ──────────────────────────────────────────────────────
+const hdrs={'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'};
+async function dbGet(){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.main&select=employees,entries`,{headers:hdrs});
+  if(!r.ok) throw new Error('fetch failed');
+  const rows=await r.json(); return rows[0]||null;
+}
+async function dbSet(){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.main`,{method:'PATCH',headers:hdrs,body:JSON.stringify({employees,entries})});
+  if(!r.ok) throw new Error('save failed');
+}
+
+function setSaveBar(state,text){
+  const el=document.getElementById('saveBar');
+  el.className='save-bar '+state; el.textContent=text;
+  clearTimeout(saveTimer);
+  if(state==='saved') saveTimer=setTimeout(()=>el.className='save-bar hidden',2500);
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+async function init(){
+  try{
+    const row=await dbGet();
+    if(row&&row.employees&&row.employees.length){
+      employees=row.employees; entries=row.entries||{};
+    } else {
+      employees=DEFAULT_EMPLOYEES; entries={};
+      await dbSet();
+    }
+    nextId=Math.max(...employees.map(e=>e.id),6)+1;
+    // calc nextReqId
+    let maxReq=0;
+    Object.values(entries).forEach(list=>list.forEach(e=>{if(e.reqId&&e.reqId>maxReq)maxReq=e.reqId;}));
+    nextReqId=maxReq+1;
+    lastJSON=JSON.stringify({employees,entries});
+  } catch(e){ employees=DEFAULT_EMPLOYEES; entries={}; }
+  document.getElementById('loadingScreen').style.display='none';
+  document.getElementById('app').style.display='block';
+  populateNameSelect();
+  renderLegend(); renderCalendar(); updatePendingCount();
+  startPolling();
+}
+
+function startPolling(){
+  setInterval(async()=>{
+    try{
+      const row=await dbGet(); if(!row) return;
+      const inc=JSON.stringify({employees:row.employees,entries:row.entries});
+      if(inc!==lastJSON){
+        employees=row.employees||[]; entries=row.entries||{};
+        nextId=Math.max(...employees.map(e=>e.id),6)+1;
+        lastJSON=inc; populateNameSelect(); renderLegend(); renderCalendar(); updatePendingCount();
+      }
+    } catch{}
+  },8000);
+}
+
+async function persist(){
+  setSaveBar('saving','Saving…');
+  try{ await dbSet(); lastJSON=JSON.stringify({employees,entries}); setSaveBar('saved','Saved ✓'); }
+  catch{ setSaveBar('error','⚠ Save failed'); }
+}
+
+// ── Manager auth ──────────────────────────────────────────────────
+function openManagerLogin(){ document.getElementById('loginInput').value=''; document.getElementById('loginError').classList.remove('visible'); openModal('loginModal'); }
+function doLogin(){
+  if(document.getElementById('loginInput').value===MANAGER_PASS){
+    isManager=true; closeModal('loginModal');
+    document.getElementById('managerBadge').style.display='flex';
+    document.getElementById('managerBtn').style.display='none';
+    document.getElementById('pendingBtn').style.display='flex';
+    document.getElementById('logoutBtn').style.display='flex';
+    renderCalendar();
+  } else {
+    document.getElementById('loginError').classList.add('visible');
+  }
+}
+function logoutManager(){
+  isManager=false;
+  document.getElementById('managerBadge').style.display='none';
+  document.getElementById('managerBtn').style.display='flex';
+  document.getElementById('pendingBtn').style.display='none';
+  document.getElementById('logoutBtn').style.display='none';
+  renderCalendar();
+}
+
+// ── Pending count ─────────────────────────────────────────────────
+function getPendingAll(){
+  const all=[];
+  Object.entries(entries).forEach(([key,list])=>{
+    list.forEach(e=>{ if(e.status==='pending') all.push({...e,dateKey:key}); });
+  });
+  return all;
+}
+function updatePendingCount(){
+  const n=getPendingAll().length;
+  document.getElementById('pendingCount').textContent=n;
+}
+
+// ── Employees ─────────────────────────────────────────────────────
+function populateNameSelect(){
+  const sel=document.getElementById('reqName');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— Select your name —</option>';
+  employees.forEach(emp=>{ const o=document.createElement('option'); o.value=emp.id; o.textContent=emp.name; sel.appendChild(o); });
+  if(cur) sel.value=cur;
+}
+function toggleVisible(id){
+  const emp=employees.find(e=>e.id===id); if(emp) emp.visible=!emp.visible;
+  renderLegend(); renderCalendar(); persist();
+}
+function renderLegend(){
+  document.getElementById('legend').innerHTML=employees.map(emp=>`
+    <div class="legend-item ${emp.visible?'':'inactive'}" onclick="toggleVisible(${emp.id})">
+      <div class="legend-dot" style="background:${emp.color}"></div>${emp.name}
+    </div>`).join('');
+}
+
+// ── Calendar ──────────────────────────────────────────────────────
+function changeMonth(dir){
+  currentMonth+=dir;
+  if(currentMonth<0){currentMonth=11;currentYear--;}
+  if(currentMonth>11){currentMonth=0;currentYear++;}
+  renderCalendar();
+}
+function dateKey(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
+
+function renderCalendar(){
+  document.getElementById('monthLabel').textContent=`${MONTHS[currentMonth]} ${currentYear}`;
+  const grid=document.getElementById('calGrid'); grid.innerHTML='';
+  const first=new Date(currentYear,currentMonth,1);
+  let startDow=(first.getDay()+6)%7;
+  const dim=new Date(currentYear,currentMonth+1,0).getDate();
+  const dip=new Date(currentYear,currentMonth,0).getDate();
+  const todayKey=dateKey(today.getFullYear(),today.getMonth(),today.getDate());
+  const total=Math.ceil((startDow+dim)/7)*7;
+
+  for(let i=0;i<total;i++){
+    let day,yr=currentYear,mo=currentMonth,isOther=false;
+    if(i<startDow){day=dip-startDow+i+1;mo=currentMonth-1;if(mo<0){mo=11;yr--;}isOther=true;}
+    else if(i>=startDow+dim){day=i-startDow-dim+1;mo=currentMonth+1;if(mo>11){mo=0;yr++;}isOther=true;}
+    else{day=i-startDow+1;}
+
+    const key=dateKey(yr,mo,day);
+    const dayEntries=(entries[key]||[]).filter(e=>e.status!=='rejected');
+    const approvedCount=dayEntries.filter(e=>e.status==='approved'&&employees.find(x=>x.id===e.empId)).length;
+    const pendingCount=dayEntries.filter(e=>e.status==='pending'&&employees.find(x=>x.id===e.empId)).length;
+    const isCritical=!isOther&&approvedCount>employees.length/2;
+    const hasPending=!isOther&&pendingCount>0;
+
+    const cell=document.createElement('div');
+    cell.className='cal-day'+(isOther?' other-month':'')+(key===todayKey?' today':'')+(isCritical?' critical':'')+(hasPending?' has-pending':'');
+
+    const dots=employees.map(emp=>{
+      const entry=dayEntries.find(e=>e.empId===emp.id);
+      if(!entry) return `<div class="avail-dot present" style="background:${emp.color}" title="${emp.name}: Available"></div>`;
+      if(entry.status==='pending') return `<div class="avail-dot pending" style="border-color:${emp.color}" title="${emp.name}: Pending"></div>`;
+      return `<div class="avail-dot" style="background:${emp.color}" title="${emp.name}: ${entry.type==='holiday'?'Holiday':'Day off'}"></div>`;
+    }).join('');
+
+    cell.innerHTML=`
+      <div class="day-top">
+        <div class="day-num">${day}</div>
+        <span class="critical-badge">⚠ Short-staffed</span>
+      </div>
+      <div class="available-row">${dots}</div>
+      <div class="day-entries" id="entries-${key}"></div>`;
+    cell.addEventListener('click',()=>{ isManager?openManagerDay(key,yr,mo,day):openRequestModal(key,yr,mo,day); });
+    grid.appendChild(cell);
+  }
+
+  // Chips
+  Object.entries(entries).forEach(([k,list])=>{
+    const el=document.getElementById('entries-'+k); if(!el) return;
+    list.filter(e=>e.status!=='rejected').forEach(e=>{
+      const emp=employees.find(x=>x.id===e.empId); if(!emp||!emp.visible) return;
+      const chip=document.createElement('div');
+      const isPending=e.status==='pending';
+      chip.className='entry-chip '+(isPending?'chip-pending':e.type==='holiday'?'chip-holiday':'chip-dayoff');
+      chip.title=`${emp.name}: ${isPending?'⏳ Pending':e.type==='holiday'?'🌴 Holiday':'☀️ Day off'}${e.note?' — '+e.note:''}`;
+      chip.innerHTML=`<span class="chip-label"><span>${isPending?'⏳':e.type==='holiday'?'🌴':'☀️'}</span><span class="chip-name">${emp.name}</span></span>`;
+      el.appendChild(chip);
+    });
+  });
+}
+
+// ── Request modal (staff) ─────────────────────────────────────────
+function openRequestModal(key,yr,mo,day){
+  selectedDateKey=key; selectedReqType=null;
+  const d=new Date(yr,mo,day);
+  document.getElementById('reqModalTitle').textContent=`${DAYS_SHORT[d.getDay()]}, ${MONTHS[mo]} ${day}`;
+  document.getElementById('reqNote').value='';
+  document.getElementById('btnHoliday').className='req-type-btn';
+  document.getElementById('btnDayoff').className='req-type-btn';
+  // Check 14-day rule
+  const todayMidnight=new Date(); todayMidnight.setHours(0,0,0,0);
+  const diffDays=Math.floor((new Date(key)-todayMidnight)/(1000*60*60*24));
+  const holidayBtn=document.getElementById('btnHoliday');
+  const noticeEl=document.getElementById('holidayNotice');
+  if(diffDays<14){
+    holidayBtn.disabled=true; holidayBtn.style.opacity='.4'; holidayBtn.style.cursor='not-allowed';
+    holidayBtn.innerHTML=`🌴 Holiday<br><small style="font-weight:400">Min. 14 days notice</small>`;
+    noticeEl.textContent=`⚠️ Holiday requires 14 days notice (German law). Only ${diffDays} day${diffDays===1?'':'s'} away.`;
+    noticeEl.style.display='block';
+  } else {
+    holidayBtn.disabled=false; holidayBtn.style.opacity='1'; holidayBtn.style.cursor='pointer';
+    holidayBtn.innerHTML=`🌴 Holiday<br><small style="font-weight:400">Paid leave</small>`;
+    noticeEl.style.display='none';
+  }
+  openModal('requestModal');
+}
+function selectReqType(type){
+  selectedReqType=type;
+  document.getElementById('btnHoliday').className='req-type-btn'+(type==='holiday'?' active-holiday':'');
+  document.getElementById('btnDayoff').className='req-type-btn'+(type==='dayoff'?' active-dayoff':'');
+}
+function submitRequest(){
+  const empId=parseInt(document.getElementById('reqName').value);
+  if(!empId){ alert('Please select your name.'); return; }
+  if(!selectedReqType){ alert('Please select Holiday or Day off.'); return; }
+  // German law: Holiday requests require at least 14 days notice
+  if(selectedReqType==='holiday'){
+    const reqDate=new Date(selectedDateKey);
+    const todayMidnight=new Date(); todayMidnight.setHours(0,0,0,0);
+    const diffDays=Math.floor((reqDate-todayMidnight)/(1000*60*60*24));
+    if(diffDays<14){
+      alert(`⚠️ Under German law (Bundesurlaubsgesetz), Holiday requests must be submitted at least 14 days in advance.\n\nThis date is only ${diffDays} day${diffDays===1?'':'s'} away.\n\nYou can still request a Day off ☀️ for short-notice absences.`);
+      return;
+    }
+  }
+  const note=document.getElementById('reqNote').value.trim();
+  if(!entries[selectedDateKey]) entries[selectedDateKey]=[];
+  // Remove previous pending/approved from same person on same day
+  entries[selectedDateKey]=entries[selectedDateKey].filter(e=>e.empId!==empId);
+  entries[selectedDateKey].push({empId,type:selectedReqType,status:'pending',note,reqId:nextReqId++});
+  closeModal('requestModal'); renderCalendar(); updatePendingCount(); persist();
+}
+
+// ── Manager day modal ─────────────────────────────────────────────
+function openManagerDay(key,yr,mo,day){
+  selectedDateKey=key;
+  const d=new Date(yr,mo,day);
+  document.getElementById('mgrDayTitle').textContent=`${DAYS_SHORT[d.getDay()]}, ${MONTHS[mo]} ${day}`;
+  const list=entries[key]||[];
+  const approved=list.filter(e=>e.status==='approved').length;
+  const pending=list.filter(e=>e.status==='pending').length;
+  document.getElementById('mgrDaySummary').textContent=`${approved} approved · ${pending} pending`;
+  renderMgrDayList(key);
+  openModal('managerDayModal');
+}
+function renderMgrDayList(key){
+  const list=entries[key]||[];
+  const el=document.getElementById('mgrDayList');
+  if(list.length===0){ el.innerHTML='<div class="no-pending">No requests for this day.</div>'; return; }
+  el.innerHTML=list.map((e,i)=>{
+    const emp=employees.find(x=>x.id===e.empId);
+    const name=emp?emp.name:'Unknown';
+    const statusIcon=e.status==='approved'?'✅':e.status==='rejected'?'❌':'⏳';
+    return `<div class="pending-item" style="margin-bottom:8px">
+      <div class="pending-item-header">
+        <span class="pending-item-name">${statusIcon} ${name}</span>
+        <span class="pending-item-type">${e.type==='holiday'?'🌴 Holiday':'☀️ Day off'}</span>
+      </div>
+      ${e.note?`<div class="pending-item-note">"${e.note}"</div>`:''}
+      ${e.status==='pending'?`<div class="pending-actions">
+        <button class="btn-sm-approve" onclick="approveEntry('${key}',${e.reqId})">✅ Approve</button>
+        <button class="btn-sm-reject" onclick="rejectEntry('${key}',${e.reqId})">❌ Reject</button>
+      </div>`:`<div style="font-size:.75rem;color:var(--muted)">${e.status==='approved'?'Approved':'Rejected'}</div>`}
+    </div>`;
+  }).join('');
+}
+function approveEntry(key,reqId){
+  const e=entries[key]&&entries[key].find(x=>x.reqId===reqId);
+  if(e){ e.status='approved'; renderMgrDayList(key); renderCalendar(); updatePendingCount(); persist(); }
+}
+function rejectEntry(key,reqId){
+  const e=entries[key]&&entries[key].find(x=>x.reqId===reqId);
+  if(e){ e.status='rejected'; renderMgrDayList(key); renderCalendar(); updatePendingCount(); persist(); }
+}
+
+// ── Pending modal ─────────────────────────────────────────────────
+function openPendingModal(){
+  const all=getPendingAll();
+  const el=document.getElementById('pendingList');
+  if(all.length===0){ el.innerHTML='<div class="no-pending">🎉 No pending requests!</div>'; }
+  else {
+    el.innerHTML=all.map(e=>{
+      const emp=employees.find(x=>x.id===e.empId);
+      const name=emp?emp.name:'Unknown';
+      const d=new Date(e.dateKey); 
+      const dLabel=`${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+      return `<div class="pending-item">
+        <div class="pending-item-header">
+          <span class="pending-item-name">${name}</span>
+          <span class="pending-item-type">${e.type==='holiday'?'🌴 Holiday':'☀️ Day off'}</span>
+        </div>
+        <div class="pending-item-date">📅 ${dLabel}</div>
+        ${e.note?`<div class="pending-item-note">"${e.note}"</div>`:''}
+        <div class="pending-actions">
+          <button class="btn-sm-approve" onclick="approveEntry('${e.dateKey}',${e.reqId});openPendingModal()">✅ Approve</button>
+          <button class="btn-sm-reject" onclick="rejectEntry('${e.dateKey}',${e.reqId});openPendingModal()">❌ Reject</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  openModal('pendingModal');
+}
+
+// ── Modal helpers ─────────────────────────────────────────────────
+function openModal(id){ document.getElementById(id).classList.add('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+function closeModalOutside(e,id){ if(e.target===document.getElementById(id)) closeModal(id); }
+
+// ── Export week ───────────────────────────────────────────────────
+function exportWeek(){
+  const now=new Date();
+  const monday=new Date(now);
+  monday.setDate(now.getDate()-((now.getDay()+6)%7));
+  const rows=[['Date','Day','Employee','Status','Type','Note']];
+  for(let i=0;i<7;i++){
+    const d=new Date(monday); d.setDate(monday.getDate()+i);
+    const key=dateKey(d.getFullYear(),d.getMonth(),d.getDate());
+    const dayLabel=`${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+    employees.forEach(emp=>{
+      const entry=(entries[key]||[]).find(e=>e.empId===emp.id&&e.status!=='rejected');
+      rows.push([key,dayLabel,emp.name,
+        entry?(entry.status==='approved'?(entry.type==='holiday'?'Holiday':'Day off'):'Pending (not approved)'):'Available',
+        entry?entry.type:'',entry?.note||'']);
+    });
+    rows.push([]);
+  }
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  const ws=`${monday.getFullYear()}-${String(monday.getMonth()+1).padStart(2,'0')}-${String(monday.getDate()).padStart(2,'0')}`;
+  a.download=`team-week-${ws}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+init();
+</script>
+</body>
+</html>
