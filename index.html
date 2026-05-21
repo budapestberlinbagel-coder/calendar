@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team Calendar</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@700&display=swap');
+
+  :root {
+    --bg: #f5f2ee; --surface: #ffffff; --border: #e2ddd8;
+    --text: #1a1714; --muted: #8a8480;
+    --danger: #c0392b; --danger-bg: #fff0ef; --danger-border: #f5b7b1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; padding: 24px 16px 48px;
+  }
+
+  .save-bar {
+    position: fixed; top: 12px; right: 16px; z-index: 300;
+    font-size: 0.75rem; font-weight: 600; padding: 4px 12px;
+    border-radius: 20px; transition: opacity 0.4s;
+  }
+  .save-bar.saving { background: #fff3cd; color: #856404; opacity: 1; }
+  .save-bar.saved  { background: #d5f5e3; color: #1e8449; opacity: 1; }
+  .save-bar.error  { background: #fde8e6; color: var(--danger); opacity: 1; }
+  .save-bar.hidden { opacity: 0; pointer-events: none; }
+
+  header { text-align: center; margin-bottom: 22px; }
+  header h1 { font-family: 'Playfair Display', serif; font-size: 2rem; letter-spacing: -0.5px; }
+  header p  { color: var(--muted); font-size: 0.86rem; margin-top: 4px; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    justify-content: center; margin-bottom: 14px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: 20px; padding: 5px 12px;
+    font-size: 0.82rem; font-weight: 500;
+    cursor: pointer; transition: all 0.15s; user-select: none;
+  }
+  .legend-item:hover { border-color: #aaa; }
+  .legend-item.inactive { opacity: 0.35; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .add-employee {
+    display: flex; gap: 8px; justify-content: center;
+    margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .add-employee input {
+    padding: 8px 14px; border: 1px solid var(--border);
+    border-radius: 8px; font-family: inherit; font-size: 0.88rem;
+    background: var(--surface); outline: none; width: 190px;
+  }
+  .add-employee input:focus { border-color: #999; }
+  .add-employee button {
+    padding: 8px 16px; background: var(--text); color: #fff;
+    border: none; border-radius: 8px; font-family: inherit;
+    font-size: 0.88rem; font-weight: 500; cursor: pointer;
+  }
+  .add-employee button:hover { opacity: 0.82; }
+
+  .controls { display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+  .month-nav {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 8px 16px;
+  }
+  .month-nav button {
+    background: none; border: none; cursor: pointer;
+    font-size: 1.1rem; color: var(--text); padding: 2px 6px;
+    border-radius: 6px; transition: background 0.15s;
+  }
+  .month-nav button:hover { background: var(--bg); }
+  .month-nav span { font-size: 1rem; font-weight: 600; min-width: 150px; text-align: center; }
+
+  .alert-hint {
+    display: flex; align-items: center; gap: 8px; justify-content: center;
+    font-size: 0.78rem; color: var(--danger); margin-bottom: 14px; font-weight: 500;
+  }
+  .alert-hint-dot {
+    width: 12px; height: 12px; background: var(--danger-bg);
+    border: 2px solid var(--danger); border-radius: 3px; flex-shrink: 0;
+  }
+
+  .calendar-wrap {
+    max-width: 920px; margin: 0 auto;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden;
+  }
+  .cal-header {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    background: var(--text); color: #fff;
+  }
+  .cal-header div {
+    text-align: center; padding: 10px 4px;
+    font-size: 0.75rem; font-weight: 600;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .cal-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    border-top: 1px solid var(--border);
+  }
+  .cal-day {
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    min-height: 110px; padding: 6px; cursor: pointer;
+    transition: background 0.1s; display: flex; flex-direction: column; gap: 4px;
+  }
+  .cal-day:nth-child(7n) { border-right: none; }
+  .cal-day:hover { background: #faf9f7; }
+  .cal-day.other-month { background: #f9f8f6; }
+  .cal-day.other-month .day-num { color: #ccc; }
+  .cal-day.critical { background: var(--danger-bg) !important; border-color: var(--danger-border); }
+  .cal-day.critical:hover { background: #fde8e6 !important; }
+  .cal-day.critical .day-num { color: var(--danger); }
+  .cal-day.today .day-num { background: var(--text); color: #fff !important; border-radius: 50%; }
+  .cal-day.today.critical .day-num { background: var(--danger); }
+
+  .day-top { display: flex; align-items: center; justify-content: space-between; }
+  .day-num {
+    font-size: 0.82rem; font-weight: 600;
+    width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  }
+  .critical-badge {
+    font-size: 0.6rem; font-weight: 700; color: var(--danger);
+    background: #fad5d3; border-radius: 4px; padding: 1px 5px;
+    text-transform: uppercase; display: none;
+  }
+  .cal-day.critical .critical-badge { display: block; }
+
+  .available-row { display: flex; gap: 3px; flex-wrap: wrap; }
+  .avail-dot { width: 8px; height: 8px; border-radius: 50%; opacity: 0.22; flex-shrink: 0; }
+  .avail-dot.present { opacity: 1; }
+
+  .day-entries { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+  .entry-chip {
+    font-size: 0.68rem; font-weight: 500; padding: 2px 5px; border-radius: 4px;
+    color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: center; justify-content: space-between; gap: 2px;
+  }
+  .entry-chip .remove-x { cursor: pointer; opacity: 0.75; font-size: 0.8rem; }
+  .entry-chip .remove-x:hover { opacity: 1; }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.28); z-index: 100;
+    align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: 16px; padding: 24px;
+    width: 340px; max-width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.14);
+    animation: pop 0.18s ease;
+  }
+  @keyframes pop { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  .modal h3 { font-family: 'Playfair Display', serif; font-size: 1.1rem; margin-bottom: 4px; }
+  .modal-summary { font-size: 0.8rem; color: var(--muted); margin-bottom: 14px; }
+  .modal-summary.danger { color: var(--danger); font-weight: 600; }
+  .modal-section-label {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.6px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+  }
+  .modal-employees {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 260px; overflow-y: auto; margin-bottom: 14px;
+  }
+  .emp-btn {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border: 1.5px solid var(--border);
+    border-radius: 10px; cursor: pointer; background: var(--bg);
+    font-family: inherit; font-size: 0.88rem; font-weight: 500;
+    text-align: left; transition: all 0.12s; width: 100%;
+  }
+  .emp-btn:hover { border-color: #bbb; background: #edeae6; }
+  .emp-btn.absent { color: #fff; border-color: transparent; }
+  .emp-color { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .emp-status {
+    margin-left: auto; font-size: 0.72rem; font-weight: 600;
+    padding: 2px 7px; border-radius: 10px; flex-shrink: 0;
+  }
+  .status-available { background: #d5f5e3; color: #1e8449; }
+  .status-absent { background: rgba(255,255,255,0.22); color: rgba(255,255,255,0.9); }
+
+  .note-input {
+    width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-family: inherit; font-size: 0.84rem;
+    margin-bottom: 14px; resize: none; outline: none;
+  }
+  .note-input:focus { border-color: #999; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-actions button {
+    padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border);
+    font-family: inherit; font-size: 0.85rem; cursor: pointer; transition: all 0.12s;
+  }
+  .btn-cancel { background: var(--bg); }
+  .btn-cancel:hover { background: #ece9e5; }
+  .btn-save { background: var(--text); color: #fff; border-color: var(--text); }
+  .btn-save:hover { opacity: 0.82; }
+
+  .loading-screen {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; z-index: 999;
+  }
+  .loading-screen p { color: var(--muted); font-size: 0.9rem; }
+  .spinner {
+    width: 32px; height: 32px; border: 3px solid var(--border);
+    border-top-color: var(--text); border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="loading-screen" id="loadingScreen">
+  <div class="spinner"></div>
+  <p>Loading calendar…</p>
+</div>
+
+<div id="app" style="display:none">
+  <div class="save-bar hidden" id="saveBar"></div>
+
+  <header>
+    <h1>📅 Team Calendar</h1>
+    <p>Click any day to mark who is unavailable · Changes sync for everyone automatically</p>
+  </header>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="add-employee">
+    <input type="text" id="newName" placeholder="New team member name…" maxlength="20"
+      onkeydown="if(event.key==='Enter') addEmployee()">
+    <button onclick="addEmployee()">+ Add member</button>
+  </div>
+
+  <div class="controls">
+    <div class="month-nav">
+      <button onclick="changeMonth(-1)">‹</button>
+      <span id="monthLabel"></span>
+      <button onclick="changeMonth(1)">›</button>
+    </div>
+  </div>
+
+  <div class="alert-hint">
+    <div class="alert-hint-dot"></div>
+    Days highlighted in red = more than half the team is unavailable
+  </div>
+
+  <div class="calendar-wrap">
+    <div class="cal-header">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div>
+      <div style="color:#f9c84a">Sat</div><div style="color:#f9c84a">Sun</div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <h3 id="modalTitle"></h3>
+    <div class="modal-summary" id="modalSummary"></div>
+    <div class="modal-section-label">Who is unavailable?</div>
+    <div class="modal-employees" id="modalEmployees"></div>
+    <textarea class="note-input" id="noteInput" rows="2" placeholder="Note (optional)…"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntries()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://rjbjufcaqtkugjqqvswa.supabase.co";
+const SUPABASE_KEY = "sb_publishable_YaDtY1Zn33CT2xvLy_060A_Vsm3l1kO";
+const TABLE = "calendar_data";
+
+const COLORS = ['#e05252','#2980b9','#27ae60','#e07d35','#8e44ad','#16a085','#d4ac0d','#c0392b','#546e7a','#d35400'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+const DEFAULT_EMPLOYEES = [
+  { id:1, name:'Eddie',  color:COLORS[0], visible:true },
+  { id:2, name:'Akos',   color:COLORS[1], visible:true },
+  { id:3, name:'Avenar', color:COLORS[2], visible:true },
+  { id:4, name:'Ana',    color:COLORS[3], visible:true },
+  { id:5, name:'Sam',    color:COLORS[4], visible:true },
+];
+
+let employees = [];
+let entries = {};
+let nextId = 6;
+let today = new Date();
+let currentYear = today.getFullYear();
+let currentMonth = today.getMonth();
+let selectedDateKey = null;
+let selectedEmpIds = new Set();
+let saveTimer = null;
+let lastJSON = '';
+
+// ── Supabase API ─────────────────────────────────────────────────
+const headers = {
+  'apikey': SUPABASE_KEY,
+  'Authorization': 'Bearer ' + SUPABASE_KEY,
+  'Content-Type': 'application/json',
+  'Prefer': 'return=minimal'
+};
+
+async function dbGet() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.main&select=employees,entries`, { headers });
+  if (!res.ok) throw new Error('fetch failed');
+  const rows = await res.json();
+  return rows[0] || null;
+}
+
+async function dbSet(emp, ent) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.main`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ employees: emp, entries: ent })
+  });
+  if (!res.ok) throw new Error('save failed');
+}
+
+// ── Save bar ─────────────────────────────────────────────────────
+function setSaveBar(state, text) {
+  const el = document.getElementById('saveBar');
+  el.className = 'save-bar ' + state;
+  el.textContent = text;
+  clearTimeout(saveTimer);
+  if (state === 'saved') saveTimer = setTimeout(() => el.className = 'save-bar hidden', 2500);
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const row = await dbGet();
+    if (row && row.employees && row.employees.length) {
+      employees = row.employees;
+      entries   = row.entries || {};
+    } else {
+      employees = DEFAULT_EMPLOYEES;
+      entries   = {};
+      await dbSet(employees, entries);
+    }
+    nextId = Math.max(...employees.map(e => e.id), 5) + 1;
+    lastJSON = JSON.stringify({ employees, entries });
+  } catch(e) {
+    console.error(e);
+    employees = DEFAULT_EMPLOYEES;
+    entries   = {};
+  }
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  renderLegend();
+  renderCalendar();
+  startPolling();
+}
+
+// ── Polling every 8 seconds ───────────────────────────────────────
+function startPolling() {
+  setInterval(async () => {
+    try {
+      const row = await dbGet();
+      if (!row) return;
+      const incoming = JSON.stringify({ employees: row.employees, entries: row.entries });
+      if (incoming !== lastJSON) {
+        employees = row.employees || [];
+        entries   = row.entries  || {};
+        nextId    = Math.max(...employees.map(e => e.id), 5) + 1;
+        lastJSON  = incoming;
+        renderLegend();
+        renderCalendar();
+      }
+    } catch { /* ignore */ }
+  }, 8000);
+}
+
+// ── Persist ───────────────────────────────────────────────────────
+async function persist() {
+  setSaveBar('saving', 'Saving…');
+  try {
+    await dbSet(employees, entries);
+    lastJSON = JSON.stringify({ employees, entries });
+    setSaveBar('saved', 'Saved ✓');
+  } catch {
+    setSaveBar('error', '⚠ Save failed');
+  }
+}
+
+// ── Employees ─────────────────────────────────────────────────────
+function addEmployee() {
+  const inp = document.getElementById('newName');
+  const name = inp.value.trim();
+  if (!name) return;
+  employees.push({ id: nextId++, name, color: COLORS[employees.length % COLORS.length], visible: true });
+  inp.value = '';
+  renderLegend(); renderCalendar(); persist();
+}
+
+function toggleVisible(id) {
+  const emp = employees.find(e => e.id === id);
+  if (emp) emp.visible = !emp.visible;
+  renderLegend(); renderCalendar(); persist();
+}
+
+function renderLegend() {
+  document.getElementById('legend').innerHTML = employees.map(emp => `
+    <div class="legend-item ${emp.visible ? '' : 'inactive'}" onclick="toggleVisible(${emp.id})">
+      <div class="legend-dot" style="background:${emp.color}"></div>${emp.name}
+    </div>`).join('');
+}
+
+// ── Calendar ──────────────────────────────────────────────────────
+function changeMonth(dir) {
+  currentMonth += dir;
+  if (currentMonth < 0)  { currentMonth = 11; currentYear--; }
+  if (currentMonth > 11) { currentMonth = 0;  currentYear++; }
+  renderCalendar();
+}
+
+function dateKey(y, m, d) {
+  return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+function renderCalendar() {
+  document.getElementById('monthLabel').textContent = `${MONTHS[currentMonth]} ${currentYear}`;
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+
+  const first       = new Date(currentYear, currentMonth, 1);
+  let startDow      = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const daysInPrev  = new Date(currentYear, currentMonth, 0).getDate();
+  const todayKey    = dateKey(today.getFullYear(), today.getMonth(), today.getDate());
+  const totalCells  = Math.ceil((startDow + daysInMonth) / 7) * 7;
+
+  for (let i = 0; i < totalCells; i++) {
+    let day, yr = currentYear, mo = currentMonth, isOther = false;
+    if (i < startDow) {
+      day = daysInPrev - startDow + i + 1; mo = currentMonth - 1;
+      if (mo < 0) { mo = 11; yr--; } isOther = true;
+    } else if (i >= startDow + daysInMonth) {
+      day = i - startDow - daysInMonth + 1; mo = currentMonth + 1;
+      if (mo > 11) { mo = 0; yr++; } isOther = true;
+    } else {
+      day = i - startDow + 1;
+    }
+
+    const key         = dateKey(yr, mo, day);
+    const absentIds   = new Set((entries[key] || []).map(e => e.empId));
+    const absentCount = [...absentIds].filter(id => employees.find(e => e.id === id)).length;
+    const isCritical  = !isOther && absentCount > employees.length / 2;
+
+    const cell = document.createElement('div');
+    cell.className = 'cal-day' +
+      (isOther        ? ' other-month' : '') +
+      (key===todayKey ? ' today'       : '') +
+      (isCritical     ? ' critical'    : '');
+
+    const dots = employees.map(emp =>
+      `<div class="avail-dot ${absentIds.has(emp.id) ? '' : 'present'}" style="background:${emp.color}" title="${emp.name}: ${absentIds.has(emp.id) ? 'Absent' : 'Available'}"></div>`
+    ).join('');
+
+    cell.innerHTML = `
+      <div class="day-top">
+        <div class="day-num">${day}</div>
+        <span class="critical-badge">⚠ Short-staffed</span>
+      </div>
+      <div class="available-row">${dots}</div>
+      <div class="day-entries" id="entries-${key}"></div>`;
+    cell.addEventListener('click', () => openModal(key, yr, mo, day));
+    grid.appendChild(cell);
+  }
+
+  Object.entries(entries).forEach(([k, list]) => {
+    const el = document.getElementById(`entries-${k}`);
+    if (!el) return;
+    list.forEach(e => {
+      const emp = employees.find(x => x.id === e.empId);
+      if (!emp || !emp.visible) return;
+      const chip = document.createElement('div');
+      chip.className = 'entry-chip';
+      chip.style.background = emp.color;
+      chip.title = e.note ? `${emp.name}: ${e.note}` : `${emp.name} – Absent`;
+      chip.innerHTML = `<span>${emp.name}</span><span class="remove-x">×</span>`;
+      chip.querySelector('.remove-x').addEventListener('click', ev => {
+        ev.stopPropagation(); removeEntry(k, emp.id);
+      });
+      el.appendChild(chip);
+    });
+  });
+}
+
+function removeEntry(key, empId) {
+  if (entries[key]) {
+    entries[key] = entries[key].filter(e => e.empId !== empId);
+    if (!entries[key].length) delete entries[key];
+  }
+  renderCalendar(); persist();
+}
+
+// ── Modal ─────────────────────────────────────────────────────────
+function openModal(key, yr, mo, day) {
+  selectedDateKey = key;
+  selectedEmpIds  = new Set((entries[key] || []).map(e => e.empId));
+  const d = new Date(yr, mo, day);
+  document.getElementById('modalTitle').textContent =
+    `${DAYS_SHORT[d.getDay()]}, ${MONTHS[mo]} ${day}, ${yr}`;
+  document.getElementById('noteInput').value = entries[key]?.[0]?.note || '';
+  updateModalSummary();
+  renderModalEmployees();
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function updateModalSummary() {
+  const total  = employees.length;
+  const absent = [...selectedEmpIds].filter(id => employees.find(e => e.id === id)).length;
+  const avail  = total - absent;
+  const el = document.getElementById('modalSummary');
+  if (absent === 0) {
+    el.textContent = `✓ Full team available (${total}/${total})`;
+    el.className = 'modal-summary';
+  } else if (absent > total / 2) {
+    el.textContent = `⚠ Only ${avail} of ${total} available — short-staffed!`;
+    el.className = 'modal-summary danger';
+  } else {
+    el.textContent = `${avail} available · ${absent} absent`;
+    el.className = 'modal-summary';
+  }
+}
+
+function renderModalEmployees() {
+  document.getElementById('modalEmployees').innerHTML = employees.map(emp => {
+    const isAbsent = selectedEmpIds.has(emp.id);
+    return `<button class="emp-btn ${isAbsent ? 'absent' : ''}"
+      style="${isAbsent ? `background:${emp.color};border-color:${emp.color}` : ''}"
+      onclick="toggleEmp(${emp.id}, this, '${emp.color}')">
+      <div class="emp-color" style="background:${emp.color}"></div>
+      ${emp.name}
+      <span class="emp-status ${isAbsent ? 'status-absent' : 'status-available'}">
+        ${isAbsent ? 'Absent' : 'Available'}</span>
+    </button>`;
+  }).join('');
+}
+
+function toggleEmp(id, btn, color) {
+  if (selectedEmpIds.has(id)) {
+    selectedEmpIds.delete(id);
+    btn.classList.remove('absent'); btn.style.background = ''; btn.style.borderColor = '';
+    btn.querySelector('.emp-status').className = 'emp-status status-available';
+    btn.querySelector('.emp-status').textContent = 'Available';
+  } else {
+    selectedEmpIds.add(id);
+    btn.classList.add('absent'); btn.style.background = color; btn.style.borderColor = color;
+    btn.querySelector('.emp-status').className = 'emp-status status-absent';
+    btn.querySelector('.emp-status').textContent = 'Absent';
+  }
+  updateModalSummary();
+}
+
+function saveEntries() {
+  const note = document.getElementById('noteInput').value.trim();
+  if (selectedEmpIds.size === 0) {
+    delete entries[selectedDateKey];
+  } else {
+    entries[selectedDateKey] = [...selectedEmpIds].map(id => ({ empId: id, note }));
+  }
+  closeModal(); renderCalendar(); persist();
+}
+
+function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+function closeModalOutside(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+
+init();
+</script>
+</body>
+</html>
